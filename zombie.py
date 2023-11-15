@@ -121,20 +121,45 @@ class Zombie:
         self.loc_no = (self.loc_no + 1) % len(self.patrol_locations)
         return BehaviorTree.SUCCESS
 
+    def has_less_ball(self):
+        if self.ball_count < play_mode.boy.ball_count:
+            return BehaviorTree.SUCCESS
+        else:
+            return BehaviorTree.FAIL
+
+    def flee_from_boy(self, r=0.5):
+        ty, tx = play_mode.boy.y, play_mode.boy.x
+        self.state = 'Walk'
+        self.dir = math.atan2(ty - self.y, tx - self.x)
+        self.speed = RUN_SPEED_PPS
+        self.x -= self.speed * math.cos(self.dir) * game_framework.frame_time
+        self.y -= self.speed * math.sin(self.dir) * game_framework.frame_time
+        if self.distance_less_than(self.tx, self.ty, self.x, self.y, r):
+            return BehaviorTree.RUNNING
+        else:
+            return BehaviorTree.SUCCESS
+
     def build_behavior_tree(self):
         a1 = Action('Set target location', self.set_target_location, 500, 500)
         a2 = Action('Move to', self.move_to)
         a3 = Action('Set random location', self.set_random_location)
         a4 = Action('소년에게 이동', self.move_to_boy)
         a5 = Action('순찰 위치를 가져온다', self.get_patrol_location)
+        a6 = Action('도망친다', self.flee_from_boy)
 
         c1 = Condition('소년이 근처에 있는가?', self.is_boy_nearby, 7)
+        c2 = Condition('소년보다 공이 적은가?', self.has_less_ball)
 
         SEQ_move_to_target_location = Sequence('Move to target location', a1, a2)
         SEQ_wander = Sequence('Wander', a3, a2)
-        SEQ_chase_boy = Sequence('소년을 추적', c1, a4)
-        SEQ_patrol = Sequence('순착', a5, a2)
+        # SEQ_chase_boy = Sequence('소년을 추적', c1, a4)
+        SEQ_patrol = Sequence('순찰', a5, a2)
 
-        SEL_chase_or_wander = Selector('Chase or Wander', SEQ_chase_boy, SEQ_move_to_target_location)
+        # SEL_chase_or_wander = Selector('Chase or Wander', SEQ_chase_boy, SEQ_move_to_target_location)
 
-        self.bt = BehaviorTree(SEQ_patrol)
+        SEQ_compare = Sequence('공의 개수 비교', c2, a6)
+        SEL_chase_or_flee = Selector('Chase or Flee', SEQ_compare, a4)
+        SEQ_chase_boy = Sequence('소년 추적', c1, SEL_chase_or_flee)
+        SEL_chase_or_wander = Selector('Chase/Flee or Wander', SEQ_chase_boy, SEQ_wander)
+
+        self.bt = BehaviorTree(SEL_chase_or_wander)
